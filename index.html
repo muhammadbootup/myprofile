@@ -14,20 +14,19 @@
             height: 100vh;
             font-family: Arial, sans-serif;
             background-color: #222;
-            overflow: hidden;
             color: #fff;
         }
 
         #game {
             position: relative;
-            width: 800px;
-            height: 600px;
+            width: 1000px;
+            height: 700px;
             background-color: #333;
             overflow: hidden;
             border: 2px solid #fff;
+            display: none; /* Initially hidden */
         }
 
-        /* Player styled as a man character with a gun */
         #player {
             position: absolute;
             bottom: 20px;
@@ -42,7 +41,6 @@
             justify-content: center;
         }
 
-        /* Head of the player */
         #player::before {
             content: '';
             position: absolute;
@@ -53,7 +51,6 @@
             border-radius: 50%;
         }
 
-        /* Gun in the player's right hand */
         #player::after {
             content: '';
             position: absolute;
@@ -76,32 +73,31 @@
             position: absolute;
             width: 50px;
             height: 50px;
-            background-color: #76B947; /* Zombie green color */
+            background-color: #76B947;
             border-radius: 5%;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
         }
 
-        .power-up {
-            position: absolute;
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            color: #fff;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-size: 20px;
+        .big-zombie {
+            background-color: #D9534F; /* Different color for big zombie */
+            width: 70px;
+            height: 70px;
+            animation: moveBigZombie 0.1s linear infinite;
         }
 
-        #score {
+        @keyframes moveBigZombie {
+            0% { transform: translateY(0); }
+            50% { transform: translateY(5px); }
+            100% { transform: translateY(0); }
+        }
+
+        #score, #lives {
             font-size: 1.5em;
             margin-top: 10px;
         }
 
         #lives {
-            font-size: 1.5em;
-            margin-top: 10px;
-            color: red; /* Make lives display red for visibility */
+            color: red;
         }
 
         #gameOver {
@@ -109,35 +105,94 @@
             font-size: 2em;
             color: yellow;
         }
+
+        #menu {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .difficulty-button {
+            background-color: #3B82F6;
+            border: none;
+            color: white;
+            padding: 15px 30px;
+            margin: 10px;
+            font-size: 1.5em;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+
+        .difficulty-button:hover {
+            background-color: #1E40AF;
+        }
     </style>
 </head>
 <body>
+    <div id="menu">
+        <h1>Zombie Shooter</h1>
+        <button class="difficulty-button" id="easy">Easy</button>
+        <button class="difficulty-button" id="normal">Normal</button>
+        <button class="difficulty-button" id="hard">Hard</button>
+    </div>
     <div id="game">
         <div id="player"></div>
     </div>
     <p id="score">Score: 0</p>
     <p id="lives">Lives: 3</p>
-    <p id="gameOver">Game Over!</p>
+    <p id="gameOver">Game Over! Press R to restart</p>
     <script>
         const gameArea = document.getElementById('game');
         const player = document.getElementById('player');
         const scoreDisplay = document.getElementById('score');
         const livesDisplay = document.getElementById('lives');
         const gameOverDisplay = document.getElementById('gameOver');
+        const menu = document.getElementById('menu');
 
-        let score = 0;
-        let lives = 3;
-        let bullets = [];
-        let zombies = [];
-        let powerUps = [];
-        let doubleGunsActive = false;
-        let grenadeAvailable = 1; // Start with one grenade
+        let score, lives, bullets, zombies, smallZombieCount;
+        let playerSpeed = 10;
+        let zombieSpawnInterval; // Zombie spawn rate
+        let zombieSpeed; // Speed of zombies
+        let bigZombieSpawnThreshold = 15; // Number of small zombies before a big zombie spawns
 
-        const playerSpeed = 10; // Adjust speed here
-        const zombieSpawnInterval = 2000; // Time interval to spawn zombies
-        const powerUpSpawnInterval = 5000; // Time interval to spawn power-ups
+        function initGame() {
+            score = 0;
+            lives = 3;
+            bullets = [];
+            zombies = [];
+            smallZombieCount = 0; // Track small zombies spawned
+            scoreDisplay.textContent = 'Score: ' + score;
+            livesDisplay.textContent = 'Lives: ' + lives;
+            gameOverDisplay.style.display = 'none';
+            menu.style.display = 'none'; // Hide menu
+            gameArea.style.display = 'block'; // Show game area
 
-        // Move player with arrow keys or WASD
+            document.querySelectorAll('.bullet, .zombie').forEach(el => el.remove());
+
+            setInterval(spawnZombie, zombieSpawnInterval);
+            setInterval(gameLoop, 100); // Main game loop
+        }
+
+        document.querySelectorAll('.difficulty-button').forEach(button => {
+            button.addEventListener('click', function() {
+                const difficulty = this.id;
+                if (difficulty === 'easy') {
+                    playerSpeed = 10;
+                    zombieSpawnInterval = 3000; // Zombies spawn slower
+                    zombieSpeed = 1; // Slower zombies
+                } else if (difficulty === 'normal') {
+                    playerSpeed = 10;
+                    zombieSpawnInterval = 2000; // Default
+                    zombieSpeed = 1; // Normal speed
+                } else if (difficulty === 'hard') {
+                    playerSpeed = 10;
+                    zombieSpawnInterval = 1500; // Faster zombies
+                    zombieSpeed = 2; // Faster zombies
+                }
+                initGame();
+            });
+        });
+
         document.addEventListener('keydown', (event) => {
             const playerRect = player.getBoundingClientRect();
             const gameRect = gameArea.getBoundingClientRect();
@@ -165,164 +220,158 @@
             if (event.key === ' ') {
                 shootBullet();
             }
-            if (event.key === 'g' && grenadeAvailable > 0) {
-                useGrenade();
+            if (event.key === 'r' && lives <= 0) {
+                initGame();
             }
         });
 
-        // Shoot bullet from the gun
         function shootBullet() {
-            const bulletCount = doubleGunsActive ? 2 : 1;
-            for (let i = 0; i < bulletCount; i++) {
-                const bullet = document.createElement('div');
-                bullet.classList.add('bullet');
-                bullet.style.left = player.offsetLeft + (i * 15) + 25 + 'px'; // Adjust for two bullets
-                bullet.style.top = player.offsetTop + 20 + 'px';
+            const bullet = document.createElement('div');
+            bullet.classList.add('bullet');
+            bullet.style.left = player.offsetLeft + 25 + 'px';
+            bullet.style.top = player.offsetTop + 20 + 'px';
+
+            // Auto-lock bullet to nearest zombie
+            const nearestZombie = getNearestZombie();
+            if (nearestZombie) {
+                const angle = Math.atan2(
+                    nearestZombie.offsetTop - player.offsetTop,
+                    nearestZombie.offsetLeft - player.offsetLeft
+                );
+
+                bullet.dx = Math.cos(angle) * 5;
+                bullet.dy = Math.sin(angle) * 5;
+
                 gameArea.appendChild(bullet);
                 bullets.push(bullet);
             }
         }
 
-        // Spawn zombies with health
+        function getNearestZombie() {
+            let nearestZombie = null;
+            let minDistance = Infinity;
+
+            zombies.forEach(zombie => {
+                const distance = Math.hypot(
+                    zombie.offsetLeft - player.offsetLeft,
+                    zombie.offsetTop - player.offsetTop
+                );
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    nearestZombie = zombie;
+                }
+            });
+
+            return nearestZombie;
+        }
+
         function spawnZombie() {
             const zombie = document.createElement('div');
             zombie.classList.add('zombie');
+            zombie.health = 5; // Set health for each zombie
             zombie.style.left = Math.random() * (gameArea.offsetWidth - 50) + 'px';
             zombie.style.top = '0px';
-            zombie.health = 3; // Set initial health for the zombie
             gameArea.appendChild(zombie);
             zombies.push(zombie);
+            smallZombieCount++;
+
+            if (smallZombieCount >= bigZombieSpawnThreshold) {
+                spawnBigZombie();
+                smallZombieCount = 0; // Reset count after spawning a big zombie
+            }
         }
 
-        // Spawn power-ups
-        function spawnPowerUp() {
-            const powerUp = document.createElement('div');
-            powerUp.classList.add('power-up');
-            const randomType = Math.random() < 0.5 ? 'D' : 'G'; // 50% chance for double guns or grenade
-            powerUp.textContent = randomType;
-            powerUp.style.backgroundColor = randomType === 'D' ? 'blue' : 'red';
-            powerUp.style.left = Math.random() * (gameArea.offsetWidth - 30) + 'px';
-            powerUp.style.top = Math.random() * (gameArea.offsetHeight - 30) + 'px';
-            gameArea.appendChild(powerUp);
-            powerUps.push(powerUp);
+        function spawnBigZombie() {
+            const bigZombie = document.createElement('div');
+            bigZombie.classList.add('zombie', 'big-zombie');
+            bigZombie.health = 10; // Big zombie has more health
+            bigZombie.style.left = Math.random() * (gameArea.offsetWidth - 70) + 'px';
+            bigZombie.style.top = '0px';
+            gameArea.appendChild(bigZombie);
+            zombies.push(bigZombie);
         }
 
-        // Move bullets and check for collisions
+        function isColliding(rect1, rect2) {
+            return !(rect1.right < rect2.left || 
+                     rect1.left > rect2.right || 
+                     rect1.bottom < rect2.top || 
+                     rect1.top > rect2.bottom);
+        }
+
         function updateBullets() {
-            bullets.forEach((bullet, index) => {
-                bullet.style.left = bullet.offsetLeft + 10 + 'px';
+            bullets.forEach((bullet, bulletIndex) => {
+                bullet.style.left = bullet.offsetLeft + bullet.dx + 'px';
+                bullet.style.top = bullet.offsetTop + bullet.dy + 'px';
 
-                // Remove bullet if it goes out of bounds
-                if (bullet.offsetLeft > gameArea.offsetWidth) {
+                if (
+                    bullet.offsetLeft < 0 || bullet.offsetLeft > gameArea.offsetWidth ||
+                    bullet.offsetTop < 0 || bullet.offsetTop > gameArea.offsetHeight
+                ) {
                     bullet.remove();
-                    bullets.splice(index, 1);
+                    bullets.splice(bulletIndex, 1);
                 }
 
-                // Check collision with zombies
                 zombies.forEach((zombie, zombieIndex) => {
-                    if (isColliding(bullet, zombie)) {
+                    if (isColliding(bullet.getBoundingClientRect(), zombie.getBoundingClientRect())) {
                         bullet.remove();
-                        bullets.splice(index, 1);
+                        bullets.splice(bulletIndex, 1);
                         zombie.health--; // Decrease zombie health
+                        score += 10; // Increment score on hit
+                        scoreDisplay.textContent = 'Score: ' + score;
+
                         if (zombie.health <= 0) {
                             zombie.remove();
                             zombies.splice(zombieIndex, 1);
-                            updateScore();
                         }
-                    }
-                });
-
-                // Check collision with power-ups
-                powerUps.forEach((powerUp, powerUpIndex) => {
-                    if (isColliding(bullet, powerUp)) {
-                        bullet.remove();
-                        powerUp.remove();
-                        bullets.splice(index, 1);
-                        collectPowerUp(powerUp.textContent);
                     }
                 });
             });
         }
 
-        // Move zombies downward and check for lives
-        function updateZombies() {
-            zombies.forEach((zombie, index) => {
-                zombie.style.top = zombie.offsetTop + 5 + 'px';
+        function moveZombies() {
+            zombies.forEach(zombie => {
+                const zombieRect = zombie.getBoundingClientRect();
+                const playerRect = player.getBoundingClientRect();
+                const playerX = playerRect.left + playerRect.width / 2;
+                const playerY = playerRect.top + playerRect.height / 2;
+                const zombieSpeedAdjustment = zombie.classList.contains('big-zombie') ? zombieSpeed * 0.5 : zombieSpeed;
 
-                // Remove zombie if it goes out of bounds
-                if (zombie.offsetTop > gameArea.offsetHeight) {
+                if (zombieRect.left < playerX) {
+                    zombie.style.left = zombie.offsetLeft + zombieSpeedAdjustment + 'px';
+                } else {
+                    zombie.style.left = zombie.offsetLeft - zombieSpeedAdjustment + 'px';
+                }
+
+                if (zombieRect.top < playerY) {
+                    zombie.style.top = zombie.offsetTop + zombieSpeedAdjustment + 'px';
+                } else {
+                    zombie.style.top = zombie.offsetTop - zombieSpeedAdjustment + 'px';
+                }
+
+                // Check for collision with player
+                if (isColliding(zombieRect, playerRect)) {
+                    lives--;
+                    livesDisplay.textContent = 'Lives: ' + lives;
                     zombie.remove();
-                    zombies.splice(index, 1);
-                    loseLife(); // Player loses a life
+                    zombies.splice(zombies.indexOf(zombie), 1);
+
+                    if (lives <= 0) {
+                        endGame();
+                    }
                 }
             });
         }
 
-        // Check for collected power-ups
-        function collectPowerUp(type) {
-            if (type === 'D') {
-                doubleGunsActive = true;
-                setTimeout(() => {
-                    doubleGunsActive = false;
-                }, 10000); // Double guns active for 10 seconds
-            } else if (type === 'G') {
-                grenadeAvailable++;
-            }
-        }
-
-        // Check collision between elements
-        function isColliding(a, b) {
-            const aRect = a.getBoundingClientRect();
-            const bRect = b.getBoundingClientRect();
-            return !(
-                aRect.bottom < bRect.top ||
-                aRect.top > bRect.bottom ||
-                aRect.right < bRect.left ||
-                aRect.left > bRect.right
-            );
-        }
-
-        // Update score
-        function updateScore() {
-            score++;
-            scoreDisplay.textContent = 'Score: ' + score;
-        }
-
-        // Lose life
-        function loseLife() {
-            lives--;
-            livesDisplay.textContent = 'Lives: ' + lives;
-            if (lives <= 0) {
-                endGame();
-            }
-        }
-
-        // Use a grenade
-        function useGrenade() {
-            grenadeAvailable--;
-            // Logic to handle grenade explosion would go here
-            console.log('Grenade used! Remaining: ' + grenadeAvailable);
-        }
-
-        // End game
-        function endGame() {
-            gameOverDisplay.style.display = 'block';
-            document.removeEventListener('keydown', movePlayer);
-            clearInterval(zombieSpawnIntervalId);
-            clearInterval(powerUpSpawnIntervalId);
-        }
-
-        // Spawn zombies and power-ups at intervals
-        const zombieSpawnIntervalId = setInterval(spawnZombie, zombieSpawnInterval);
-        const powerUpSpawnIntervalId = setInterval(spawnPowerUp, powerUpSpawnInterval);
-
-        // Game loop
         function gameLoop() {
             updateBullets();
-            updateZombies();
+            moveZombies();
         }
 
-        setInterval(gameLoop, 1000 / 60); // 60 frames per second
+        function endGame() {
+            gameArea.style.display = 'none';
+            gameOverDisplay.style.display = 'block';
+            menu.style.display = 'flex'; // Show menu again
+        }
     </script>
 </body>
 </html>
